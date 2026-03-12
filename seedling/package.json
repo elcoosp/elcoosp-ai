@@ -1,6 +1,6 @@
 {
   "name": "@elcoosp-ai/seedling",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "AI-powered GitHub issue generator and syncer – turn your implementation plans and specs into trackable issues, automatically.",
   "keywords": [
     "github",
@@ -13,12 +13,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/elcoosp-ai/elcoosp-ai"
+    "url": "https://github.com/elcoosp/elcoosp-ai"
   },
   "bugs": {
-    "url": "https://github.com/elcoosp-ai/elcoosp-ai/issues"
+    "url": "https://github.com/elcoosp/elcoosp-ai/issues"
   },
-  "homepage": "https://github.com/elcoosp-ai/elcoosp-ai#readme",
+  "homepage": "https://github.com/elcoosp/elcoosp-ai#readme",
   "engines": {
     "node": ">=18.0.0"
   },
