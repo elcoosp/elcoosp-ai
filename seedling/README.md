@@ -18,8 +18,9 @@ Seedling is a command‑line tool that helps you **generate GitHub issues from y
 - **🤖 AI‑powered generation** – Feed it your implementation plan and related specification documents; an LLM breaks them down into well‑structured issues with titles, descriptions, labels, and even assignees.
 - **📝 Issues as code** – Each issue becomes a markdown file with YAML frontmatter, stored in your repository. Review, edit, and version them like any other code.
 - **🔄 Idempotent sync** – The `sync` command creates, updates, or closes GitHub issues based on changes to your markdown files. A mapping file ensures no duplicates and that only changed files are synced.
-- **🏷️ Smart labeling & assignment** – The LLM can suggest relevant labels (e.g., "backend", "frontend", "must", "should"). If you provide a team roster in your config, it will assign issues to the right people.
+- **🏷️ Smart labeling & assignment** – The LLM can suggest relevant labels (e.g., "backend", "frontend", "must", "should"). If you provide a team roster in your config, it will assign issues to the right people based on their role and expertise.
 - **🔗 Traceability** – Generated issues include links back to the original spec sections, so you always know where a task came from.
+- **🛡️ Resilient generation** – Issues are saved incrementally as they are generated. If a step fails (e.g., due to a quota limit or transient error), partial progress is preserved. Permanent errors (like session limits) abort the process immediately without useless retries.
 
 ## 📦 Installation
 
@@ -57,8 +58,8 @@ pnpx @elcoosp-ai/seedling gen [options]
 - `--specs <dir>` – directory containing specification documents (e.g., `archi.md`, `srs.md`). If omitted, the value from config (`specsDir`) or `./specs` will be used.
 - `--out <dir>` – output directory for the generated issue files. If omitted, the value from config (`issuesDir`) or `./issues` will be used.
 - `--config <path>` – path to a config file (default `./seedling.config.json`).
-- `--model <model>` – LLM model to use (default from config or `llama3.2`).
-- `--temperature <number>` – LLM temperature (default from config or `0.15`).
+- `--model <model>` – LLM model to use (default from config or `glm-5:cloud`).
+- `--temperature <number>` – LLM temperature (default from config or `0.2`).
 
 **Example with all flags:**
 
