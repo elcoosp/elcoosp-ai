@@ -1,0 +1,31 @@
+# Source and test files
+src/
+tests/
+coverage/
+test-issues/
+examples/
+
+# Configuration files
+tsconfig.json
+vitest.config.ts
+rslib.config.ts
+.eslintrc.*
+.prettierrc
+.prettierignore
+.idea/
+.vscode/
+
+# CI and Git
+.github/
+.gitignore
+.gitattributes
+
+# Lock files (should not be published)
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+
+# Logs and temporary files
+*.log
+*.tmp
+.DS_Store
