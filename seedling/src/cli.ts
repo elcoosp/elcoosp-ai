@@ -45,10 +45,7 @@ program
 program
   .command("sync")
   .description("Sync issue files with GitHub")
-  .requiredOption(
-    "-t, --token <token>",
-    "GitHub token (or set GITHUB_TOKEN env)",
-  )
+  .option("-t, --token <token>", "GitHub token (defaults to GITHUB_TOKEN env)")
   .requiredOption("-r, --repo <owner/repo>", "GitHub repository")
   .option("-d, --dir <dir>", "Issues directory", "./issues")
   .option("-m, --mapping <file>", "Mapping file", "./issues-mapping.json")
@@ -61,7 +58,9 @@ program
     }
     const token = options.token || process.env.GITHUB_TOKEN;
     if (!token) {
-      console.error("GitHub token required via --token or GITHUB_TOKEN env");
+      console.error(
+        "GitHub token required. Provide via --token or set GITHUB_TOKEN environment variable.",
+      );
       process.exit(1);
     }
     try {
