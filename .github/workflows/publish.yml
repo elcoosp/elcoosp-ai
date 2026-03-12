@@ -9,10 +9,11 @@ jobs:
   release-and-publish:
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Force Node 24 for actions
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
       contents: write
       id-token: write
+      pull-requests: read
     defaults:
       run:
         working-directory: ./seedling
@@ -22,7 +23,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Install pnpm
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -36,14 +36,21 @@ jobs:
       - run: pnpm install
       - run: pnpm run prepublishOnly
 
-      # Create GitHub Release
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Generate Changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v6
         with:
-          generate_release_notes: true
+          configuration: ".github/changelog-config.json"
+          commitMode: "conventional"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Publish to npm using trusted publishing (no token)
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.changelog }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish to npm
         run: pnpm publish --access public --no-git-checks
