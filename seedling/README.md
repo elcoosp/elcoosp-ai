@@ -72,6 +72,15 @@ seedling gen --plan ./docs/plan.md --specs ./docs/specs --out ./generated-issues
 seedling gen
 ```
 
+> [!IMPORTANT]
+> If you are using a cloud‑based model (e.g., `glm-5:cloud`), you **must** set the `OLLAMA_API_KEY` environment variable to your API key. For local models (like `llama3.2`), no API key is required. You can set it in your terminal:
+>
+> ```bash
+> export OLLAMA_API_KEY=your-api-key-here
+> ```
+>
+> Or create a `.env` file in your project root with `OLLAMA_API_KEY=your-key`.
+
 ### Sync issues to GitHub
 
 ```bash
