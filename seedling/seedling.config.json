@@ -1,0 +1,18 @@
+{
+  "specsDir": "./docs/specs",
+  "issuesDir": "./issues",
+  "mappingFile": "./.issues-mapping.json",
+  "github": {
+    "owner": "myorg",
+    "repo": "myrepo"
+  },
+  "llm": {
+    "model": "glm-5:cloud",
+    "temperature": 0.2
+  },
+  "assignees": [
+    { "username": "alice-dev", "role": "backend" },
+    { "username": "bob-ui", "role": "frontend" },
+    { "username": "charlie-db", "role": "database" }
+  ]
+}

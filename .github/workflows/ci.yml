@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "seedling/**" # Only run when seedling files change
+  pull_request:
+    branches: [main]
+    paths:
+      - "seedling/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./seedling # Set working directory to seedling folder
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: ./seedling/pnpm-lock.yaml
+
+      - run: npm install -g pnpm
+      - run: pnpm install
+      - run: pnpm run lint
+      - run: pnpm run test:coverage
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./seedling/coverage # Point to coverage in seedling folder
