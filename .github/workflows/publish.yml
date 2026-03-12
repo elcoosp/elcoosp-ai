@@ -42,14 +42,23 @@ jobs:
         with:
           configuration: ".github/changelog-config.json"
           commitMode: "conventional"
+          prMode: false # Use commits instead of PRs
+          failOnError: false # Don't fail if changelog is empty
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Write changelog to a file inside seedling/ (because of working-directory)
+      # Write changelog to a file inside seedling/
       - name: Write Changelog to File
-        run: echo "${{ steps.changelog.outputs.changelog }}" > CHANGELOG.md
+        run: |
+          if [ -z "${{ steps.changelog.outputs.changelog }}" ]; then
+            echo "# ${{ github.ref_name }}" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "No notable changes" >> CHANGELOG.md
+          else
+            echo "${{ steps.changelog.outputs.changelog }}" > CHANGELOG.md
+          fi
 
-      # Create GitHub Release – note body_path points to seedling/CHANGELOG.md
+      # Create GitHub Release – body_path points to seedling/CHANGELOG.md
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
