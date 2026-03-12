@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "seedling/**" # Only run when seedling files change
+      - "seedling/**"
   pull_request:
     branches: [main]
     paths:
@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./seedling # Set working directory to seedling folder
+        working-directory: ./seedling
 
     steps:
       - uses: actions/checkout@v4
@@ -24,15 +24,16 @@ jobs:
         with:
           node-version: 20
           cache: "pnpm"
-          cache-dependency-path: ./seedling/pnpm-lock.yaml
+          cache-dependency-path: "./seedling/pnpm-lock.yaml"
 
       - run: npm install -g pnpm
       - run: pnpm install
       - run: pnpm run lint
       - run: pnpm run test:coverage
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
+      # (Optional) If you want to keep coverage reports as artifacts:
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          directory: ./seedling/coverage # Point to coverage in seedling folder
+          name: coverage-report
+          path: seedling/coverage/
