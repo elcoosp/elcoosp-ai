@@ -21,8 +21,8 @@ export interface GenerateIssuesOptions {
 
 export async function generateIssues(
   planPath: string | undefined,
-  specsDir: string,
-  outputDir: string,
+  specsDir: string | undefined,
+  outputDir: string | undefined,
   options?: GenerateIssuesOptions,
 ): Promise<void> {
   const config = await readConfig(options?.configPath);
@@ -35,6 +35,12 @@ export async function generateIssues(
     );
   }
 
+  // Determine specs directory: CLI argument > config > fallback "./specs"
+  const resolvedSpecsDir = specsDir || config.specsDir || "./specs";
+
+  // Determine output directory: CLI argument > config > fallback "./issues"
+  const resolvedOutputDir = outputDir || config.issuesDir || "./issues";
+
   const model = options?.model || config.llm?.model || "llama3.2";
   const temperature = options?.temperature ?? config.llm?.temperature ?? 0.15;
   const apiKey = options?.apiKey || process.env.OLLAMA_API_KEY;
@@ -42,19 +48,31 @@ export async function generateIssues(
 
   const linkConfig = buildLinkConfig(
     resolvedPlanPath,
-    specsDir,
+    resolvedSpecsDir,
     options?.repoBaseUrl,
     options?.branch || "main",
   );
 
   const plan = await fs.readFile(resolvedPlanPath, "utf-8");
 
-  const specFiles = await fs.readdir(specsDir);
+  // Check if specs directory exists
+  if (!(await fs.pathExists(resolvedSpecsDir))) {
+    throw new Error(`Specs directory not found: ${resolvedSpecsDir}`);
+  }
+
+  const specFiles = await fs.readdir(resolvedSpecsDir);
   const specsByName: Record<string, string> = {};
 
   for (const file of specFiles.filter((f) => f.endsWith(".md"))) {
-    const content = await fs.readFile(path.join(specsDir, file), "utf-8");
+    const content = await fs.readFile(
+      path.join(resolvedSpecsDir, file),
+      "utf-8",
+    );
     specsByName[file] = content;
+  }
+
+  if (Object.keys(specsByName).length === 0) {
+    console.warn(`No markdown spec files found in ${resolvedSpecsDir}`);
   }
 
   let assigneesSection = "";
@@ -113,7 +131,7 @@ export async function generateIssues(
 
   console.log(`Generated ${issues.length} issues`);
 
-  await fs.ensureDir(outputDir);
+  await fs.ensureDir(resolvedOutputDir);
 
   let writtenCount = 0;
   let skippedCount = 0;
@@ -159,11 +177,13 @@ export async function generateIssues(
     );
 
     const fileContent = matter.stringify(issue.description, cleanFrontmatter);
-    await fs.writeFile(path.join(outputDir, `${id}.md`), fileContent);
+    await fs.writeFile(path.join(resolvedOutputDir, `${id}.md`), fileContent);
     writtenCount++;
   }
 
-  console.log(`Successfully wrote ${writtenCount} issues to ${outputDir}`);
+  console.log(
+    `Successfully wrote ${writtenCount} issues to ${resolvedOutputDir}`,
+  );
   if (skippedCount > 0) {
     console.log(`Skipped ${skippedCount} invalid issues`);
   }
@@ -192,7 +212,7 @@ export async function generateIssues(
     }
   }
 
-  await fs.writeJson(path.join(outputDir, "_report.json"), report, {
+  await fs.writeJson(path.join(resolvedOutputDir, "_report.json"), report, {
     spaces: 2,
   });
   console.log("Summary report written to _report.json");

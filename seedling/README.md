@@ -45,18 +45,32 @@ After global installation, you can use the `seedling` command directly. If you p
 
 ```bash
 # If installed globally
-seedling gen --plan ./plan.md --specs ./specs --out ./issues
+seedling gen [options]
 
 # Without installation
-pnpx @elcoosp-ai/seedling gen --plan ./plan.md --specs ./specs --out ./issues
+pnpx @elcoosp-ai/seedling gen [options]
 ```
 
-- `--plan` – path to your implementation plan (markdown). If omitted, the path must be provided in the config file as `planPath`.
-- `--specs` – directory containing specification documents (e.g., `archi.md`, `srs.md`).
-- `--out` – output directory for the generated issue files (default `./issues`).
-- `--config` – (optional) path to a config file (default `./seedling.config.json`).
-- `--model` – (optional) LLM model to use (default from config or `llama3.2`).
-- `--temperature` – (optional) LLM temperature (default from config or `0.15`).
+**Options:**
+
+- `--plan <path>` – path to your implementation plan (markdown). If omitted, the path must be provided in the config file as `planPath`.
+- `--specs <dir>` – directory containing specification documents (e.g., `archi.md`, `srs.md`). If omitted, the value from config (`specsDir`) or `./specs` will be used.
+- `--out <dir>` – output directory for the generated issue files. If omitted, the value from config (`issuesDir`) or `./issues` will be used.
+- `--config <path>` – path to a config file (default `./seedling.config.json`).
+- `--model <model>` – LLM model to use (default from config or `llama3.2`).
+- `--temperature <number>` – LLM temperature (default from config or `0.15`).
+
+**Example with all flags:**
+
+```bash
+seedling gen --plan ./docs/plan.md --specs ./docs/specs --out ./generated-issues
+```
+
+**Example using only config (no flags):**
+
+```bash
+seedling gen
+```
 
 ### Sync issues to GitHub
 
@@ -64,17 +78,24 @@ pnpx @elcoosp-ai/seedling gen --plan ./plan.md --specs ./specs --out ./issues
 export GITHUB_TOKEN=ghp_abc123
 
 # If installed globally
-seedling sync --repo owner/repo --dir ./issues
+seedling sync --repo owner/repo [options]
 
 # Without installation
-pnpx @elcoosp-ai/seedling sync --repo owner/repo --dir ./issues
+pnpx @elcoosp-ai/seedling sync --repo owner/repo [options]
 ```
 
-- `--token` – GitHub personal access token (or set `GITHUB_TOKEN` env).
-- `--repo` – repository in the format `owner/repo`.
-- `--dir` – directory containing issue markdown files (default `./issues`).
-- `--mapping` – path to the mapping file (default `./issues-mapping.json`).
+**Options:**
+
+- `--repo` – repository in the format `owner/repo` **(required)**.
+- `--dir <dir>` – directory containing issue markdown files (default `./issues`).
+- `--mapping <file>` – path to the mapping file (default `./issues-mapping.json`).
 - `--dry-run` – preview changes without actually calling the GitHub API.
+
+**Example:**
+
+```bash
+seedling sync --repo elcoosp/skilldeck --dir ./docs/issues
+```
 
 ## ⚙️ Configuration
 
@@ -82,9 +103,9 @@ Seedling can be configured via a `seedling.config.json` file in your project roo
 
 ```json
 {
-  "planPath": "./plan.md",
+  "planPath": "./docs/plan.md",
   "specsDir": "./docs/specs",
-  "issuesDir": "./issues",
+  "issuesDir": "./docs/issues",
   "mappingFile": "./.issues-mapping.json",
   "github": {
     "owner": "myorg",

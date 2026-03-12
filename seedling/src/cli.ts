@@ -17,28 +17,25 @@ program
 program
   .command("gen")
   .description("Generate issue markdown files from implementation plan")
-  .option("-p, --plan <path>", "Path to implementation plan markdown file") // Now optional
+  .option("-p, --plan <path>", "Path to implementation plan markdown file")
   .option(
     "-c, --config <path>",
     "Path to config file (default: seedling.config.json)",
   )
-  .option("-s, --specs <dir>", "Directory containing spec files", "./specs")
-  .option("-o, --out <dir>", "Output directory for issues", "./issues")
-  .option("-m, --model <model>", "LLM model to use", "glm-5:cloud")
-  .option("-t, --temperature <number>", "LLM temperature", parseFloat, 0.2)
+  .option("-s, --specs <dir>", "Directory containing spec files")
+  .option("-o, --out <dir>", "Output directory for issues")
+  .option("-m, --model <model>", "LLM model to use")
+  .option("-t, --temperature <number>", "LLM temperature", parseFloat)
   .action(async (options) => {
     try {
-      await generateIssues(
-        options.plan, // may be undefined
-        options.specs,
-        options.out,
-        {
-          model: options.model,
-          temperature: options.temperature,
-          configPath: options.config,
-        },
+      await generateIssues(options.plan, options.specs, options.out, {
+        model: options.model,
+        temperature: options.temperature,
+        configPath: options.config,
+      });
+      console.log(
+        `Issues generated in ${options.out || (await readConfig(options.config)).issuesDir || "./issues"}`,
       );
-      console.log(`Issues generated in ${options.out}`);
     } catch (err) {
       console.error("Generation failed:", err);
       process.exit(1);
