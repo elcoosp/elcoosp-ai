@@ -51,10 +51,12 @@ seedling gen --plan ./plan.md --specs ./specs --out ./issues
 pnpx @elcoosp-ai/seedling gen --plan ./plan.md --specs ./specs --out ./issues
 ```
 
-- `--plan` – path to your implementation plan (markdown).
+- `--plan` – path to your implementation plan (markdown). If omitted, the path must be provided in the config file as `planPath`.
 - `--specs` – directory containing specification documents (e.g., `archi.md`, `srs.md`).
 - `--out` – output directory for the generated issue files (default `./issues`).
-- `--assignees` – (optional) path to a JSON file listing possible assignees (see [Configuration](#configuration)).
+- `--config` – (optional) path to a config file (default `./seedling.config.json`).
+- `--model` – (optional) LLM model to use (default from config or `llama3.2`).
+- `--temperature` – (optional) LLM temperature (default from config or `0.15`).
 
 ### Sync issues to GitHub
 
@@ -76,10 +78,11 @@ pnpx @elcoosp-ai/seedling sync --repo owner/repo --dir ./issues
 
 ## ⚙️ Configuration
 
-Seedling can be configured via a `seedling.config.json` file in your project root. All options are optional.
+Seedling can be configured via a `seedling.config.json` file in your project root. All options are optional, and command‑line flags override their corresponding config values.
 
 ```json
 {
+  "planPath": "./plan.md",
   "specsDir": "./docs/specs",
   "issuesDir": "./issues",
   "mappingFile": "./.issues-mapping.json",
@@ -92,14 +95,30 @@ Seedling can be configured via a `seedling.config.json` file in your project roo
     "temperature": 0.2
   },
   "assignees": [
-    { "username": "alice-dev", "role": "backend" },
-    { "username": "bob-ui", "role": "frontend" }
+    {
+      "username": "alice-dev",
+      "role": "backend",
+      "expertise": ["rust", "api"]
+    },
+    {
+      "username": "bob-ui",
+      "role": "frontend",
+      "expertise": ["react", "typescript"]
+    }
   ]
 }
 ```
 
+- `planPath` – default implementation plan path (used when `--plan` is not supplied).
+- `specsDir` – default specs directory.
+- `issuesDir` – default output directory for generated issues.
+- `mappingFile` – default mapping file for sync.
+- `github` – default repository owner/name (can be overridden by CLI flags).
+- `llm` – default model and temperature.
+- `assignees` – team roster for intelligent assignment; the LLM will match issues to members based on their role and expertise.
+
 > [!TIP]
-> You can also pass most of these options directly via command‑line flags – they take precedence over the config file.
+> Command‑line flags always take precedence over the config file – use them for one‑off overrides.
 
 ## 📄 Issue File Format
 
