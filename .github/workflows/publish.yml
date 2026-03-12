@@ -3,13 +3,14 @@ name: Release and Publish
 on:
   push:
     tags:
-      - "v*" # Triggers on any tag starting with 'v' (e.g., v0.1.0, v1.2.3)
+      - "v*"
 
 jobs:
   release-and-publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Needed to create GitHub releases
+      contents: write
+      id-token: write
     defaults:
       run:
         working-directory: ./seedling
@@ -17,36 +18,29 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0 # Fetches all history for accurate changelog generation
+          fetch-depth: 0
 
-      # Install pnpm first (so it's available for caching and later steps)
-      - uses: pnpm/action-setup@v3
+      # Install pnpm
+      - uses: pnpm/action-setup@v4
         with:
-          version: 8 # Use the pnpm version you need (or 'latest')
+          version: 10
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
-          registry-url: "https://registry.npmjs.org"
+          node-version: 24
           cache: "pnpm"
-          cache-dependency-path: ./seedling/pnpm-lock.yaml
+          cache-dependency-path: "./seedling/pnpm-lock.yaml"
 
       - run: pnpm install
-      - run: pnpm run prepublishOnly # Builds, checks, and tests
+      - run: pnpm run prepublishOnly
 
-      # 1. Create GitHub Release (auto-generates notes from commits)
+      # Create GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          # If you want to attach build artifacts, uncomment:
-          # files: |
-          #   seedling/dist/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Publish to npm
       - name: Publish to npm
         run: pnpm publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

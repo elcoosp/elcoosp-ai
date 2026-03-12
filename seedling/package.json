@@ -1,6 +1,6 @@
 {
   "name": "@elcoosp-ai/seedling",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AI-powered GitHub issue generator and syncer – turn your implementation plans and specs into trackable issues, automatically.",
   "keywords": [
     "github",
@@ -27,7 +27,7 @@
   },
   "type": "module",
   "bin": {
-    "seedling": "./dist/cli.js"
+    "seedling": "./dist/cjs/cli.cjs"
   },
   "files": [
     "dist"
