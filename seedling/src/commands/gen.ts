@@ -17,7 +17,8 @@ export interface GenerateIssuesOptions {
   baseURL?: string;
   repoBaseUrl?: string;
   branch?: string;
-  maxSteps?: number; // maximum number of generation rounds (safety)
+  maxSteps?: number;
+  maxRetries?: number; // new: number of retries per step
 }
 
 interface GenerationChunk {
@@ -34,25 +35,21 @@ export async function generateIssues(
 ): Promise<void> {
   const config = await readConfig(options?.configPath);
 
-  // Determine plan path: CLI argument > config > error
+  // Determine paths
   const resolvedPlanPath = planPath || config.planPath;
   if (!resolvedPlanPath) {
     throw new Error(
       "Plan path must be provided either via --plan flag or planPath in config file",
     );
   }
-
-  // Determine specs directory: CLI argument > config > fallback "./specs"
   const resolvedSpecsDir = specsDir || config.specsDir || "./specs";
-
-  // Determine output directory: CLI argument > config > fallback "./issues"
   const resolvedOutputDir = outputDir || config.issuesDir || "./issues";
-
   const model = options?.model || config.llm?.model || "llama3.2";
   const temperature = options?.temperature ?? config.llm?.temperature ?? 0.15;
   const apiKey = options?.apiKey || process.env.OLLAMA_API_KEY;
   const baseURL = options?.baseURL || process.env.OLLAMA_BASE_URL;
-  const maxSteps = options?.maxSteps || 20; // prevent infinite loops
+  const maxSteps = options?.maxSteps || 20;
+  const maxRetries = options?.maxRetries || 3; // default 3 retries per step
 
   // Read plan and specs
   const plan = await fs.readFile(resolvedPlanPath, "utf-8");
@@ -86,7 +83,7 @@ ${config.assignees
 `;
   }
 
-  // Prepare link config with correct relative paths from output directory
+  // Prepare link config
   const linkConfig = buildLinkConfig(
     resolvedPlanPath,
     resolvedSpecsDir,
@@ -95,13 +92,12 @@ ${config.assignees
     options?.branch || "main",
   );
 
-  // ===== ITERATIVE GENERATION =====
+  // Initialize conversation
   const ollama = createOllama({
     ...(apiKey && { apiKey }),
     ...(baseURL && { baseURL }),
   });
 
-  // Initial system message
   const messages = [
     {
       role: "system",
@@ -142,55 +138,124 @@ Here are the input documents.
     },
   ];
 
-  let allIssues: any[] = [];
   let stepCount = 0;
   let completed = false;
+  let writtenCount = 0;
+  let skippedCount = 0;
 
   console.log(
-    `Starting iterative generation with model ${model}, max steps ${maxSteps}`,
+    `Starting iterative generation with model ${model}, max steps ${maxSteps}, max retries per step ${maxRetries}`,
   );
+
+  await fs.ensureDir(resolvedOutputDir);
 
   while (!completed && stepCount < maxSteps) {
     stepCount++;
     console.log(`Step ${stepCount}...`);
 
-    const result = await generateText({
-      model: ollama(model, { keep_alive: "10m" }),
-      messages,
-      temperature,
-      maxTokens: 8192, // generous for a chunk
-    });
+    let chunk: GenerationChunk | null = null;
+    let attempt = 0;
 
-    // Parse the response
-    let chunk: GenerationChunk;
-    try {
-      let text = result.text.trim();
-      // Strip possible markdown code fences
-      if (text.startsWith("```")) {
-        text = text.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    while (attempt < maxRetries && !chunk) {
+      try {
+        const result = await generateText({
+          model: ollama(model, { keep_alive: "10m" }),
+          messages,
+          temperature,
+          maxTokens: 8192,
+        });
+
+        let text = result.text.trim();
+        if (text.startsWith("```")) {
+          text = text.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+        }
+        chunk = JSON.parse(text);
+
+        // Basic validation
+        if (!chunk.issues || !Array.isArray(chunk.issues)) {
+          throw new Error('Missing "issues" array');
+        }
+      } catch (err) {
+        attempt++;
+        console.warn(
+          `Step ${stepCount} attempt ${attempt} failed: ${err.message}`,
+        );
+        if (attempt >= maxRetries) {
+          throw new Error(
+            `Step ${stepCount} failed after ${maxRetries} attempts.`,
+          );
+        }
+        // Wait before retrying
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
-      chunk = JSON.parse(text);
-    } catch (err) {
-      console.error(
-        `Failed to parse step ${stepCount} response as JSON. Raw response:`,
-        result.text.slice(0, 1000),
+    }
+
+    // Now we have a valid chunk
+    // Write each issue from this chunk to disk immediately
+    for (const issue of chunk.issues) {
+      if (!issue.title || !issue.description) {
+        console.warn(
+          `Skipping issue in step ${stepCount}: missing title or description`,
+        );
+        skippedCount++;
+        continue;
+      }
+
+      const id = slugify(issue.title, {
+        lower: true,
+        strict: true,
+        replacement: "-",
+      }).slice(0, 50);
+      // Ensure uniqueness by appending a counter if file exists
+      let finalId = id;
+      let counter = 1;
+      while (
+        await fs.pathExists(path.join(resolvedOutputDir, `${finalId}.md`))
+      ) {
+        finalId = `${id}-${counter}`;
+        counter++;
+      }
+
+      const frontmatter: IssueFrontmatter = {
+        id: finalId,
+        title: issue.title,
+        labels: issue.labels || [],
+        assignees: issue.assignees || [],
+        references: issue.references || [],
+        state: "open",
+        createdAt: new Date().toISOString(),
+        priority: issue.priority || "should",
+        effort: issue.effort || undefined,
+        dependencies: issue.dependencies?.length
+          ? issue.dependencies
+          : undefined,
+      };
+
+      try {
+        IssueFrontmatterSchema.parse(frontmatter);
+      } catch (err) {
+        console.warn(`Validation failed for issue ${finalId}:`, err);
+        skippedCount++;
+        continue;
+      }
+
+      const cleanFrontmatter = Object.fromEntries(
+        Object.entries(frontmatter).filter(([, v]) => v !== undefined),
       );
-      throw new Error(`Invalid JSON in step ${stepCount}: ${err}`);
+
+      const fileContent = matter.stringify(issue.description, cleanFrontmatter);
+      await fs.writeFile(
+        path.join(resolvedOutputDir, `${finalId}.md`),
+        fileContent,
+      );
+      writtenCount++;
     }
 
-    // Validate chunk structure
-    if (!chunk.issues || !Array.isArray(chunk.issues)) {
-      throw new Error(`Step ${stepCount} response missing "issues" array`);
-    }
-
-    // Add issues to global list
-    allIssues.push(...chunk.issues);
     completed = chunk.isCompleted === true;
 
     // Add assistant's response to conversation history
-    messages.push({ role: "assistant", content: result.text });
+    messages.push({ role: "assistant", content: JSON.stringify(chunk) });
 
-    // If not completed, add a follow-up prompt to continue
     if (!completed) {
       const hint = chunk.nextSectionHint
         ? ` Continue with: ${chunk.nextSectionHint}`
@@ -204,75 +269,19 @@ Here are the input documents.
 
   if (!completed) {
     console.warn(
-      `Reached maximum steps (${maxSteps}) without completion signal. Generated ${allIssues.length} issues.`,
+      `Reached maximum steps (${maxSteps}) without completion signal. Generated ${writtenCount} issues so far.`,
     );
   } else {
     console.log(
-      `Generation completed in ${stepCount} steps. Total issues: ${allIssues.length}`,
+      `Generation completed in ${stepCount} steps. Total issues: ${writtenCount}`,
     );
   }
 
-  // ===== WRITE ISSUES =====
-  await fs.ensureDir(resolvedOutputDir);
-  let writtenCount = 0;
-  let skippedCount = 0;
-
-  for (let i = 0; i < allIssues.length; i++) {
-    const issue = allIssues[i];
-
-    if (!issue.title || !issue.description) {
-      console.warn(`Skipping issue ${i + 1}: missing title or description`);
-      skippedCount++;
-      continue;
-    }
-
-    const id = `${(i + 1).toString().padStart(3, "0")}-${slugify(issue.title, {
-      lower: true,
-      strict: true,
-      replacement: "-",
-    }).slice(0, 50)}`;
-
-    const frontmatter: IssueFrontmatter = {
-      id,
-      title: issue.title,
-      labels: issue.labels || [],
-      assignees: issue.assignees || [],
-      references: issue.references || [],
-      state: "open",
-      createdAt: new Date().toISOString(),
-      priority: issue.priority || "should",
-      effort: issue.effort || undefined,
-      dependencies: issue.dependencies?.length ? issue.dependencies : undefined,
-    };
-
-    try {
-      IssueFrontmatterSchema.parse(frontmatter);
-    } catch (err) {
-      console.warn(`Validation failed for issue ${id}:`, err);
-      skippedCount++;
-      continue;
-    }
-
-    const cleanFrontmatter = Object.fromEntries(
-      Object.entries(frontmatter).filter(([, v]) => v !== undefined),
-    );
-
-    const fileContent = matter.stringify(issue.description, cleanFrontmatter);
-    await fs.writeFile(path.join(resolvedOutputDir, `${id}.md`), fileContent);
-    writtenCount++;
-  }
-
-  console.log(
-    `Successfully wrote ${writtenCount} issues to ${resolvedOutputDir}`,
-  );
-  if (skippedCount > 0) {
-    console.log(`Skipped ${skippedCount} invalid issues`);
-  }
-
-  // Write report
+  // Write final report
+  const allIssues = await readAllIssues(resolvedOutputDir);
   const report = {
     generatedAt: new Date().toISOString(),
-    totalIssues: allIssues.length,
+    totalIssues: writtenCount + skippedCount,
     written: writtenCount,
     skipped: skippedCount,
     stepsUsed: stepCount,
@@ -300,6 +309,19 @@ Here are the input documents.
     spaces: 2,
   });
   console.log("Summary report written to _report.json");
+}
+
+async function readAllIssues(dir: string): Promise<any[]> {
+  const files = await fs.readdir(dir);
+  const issues = [];
+  for (const file of files) {
+    if (file.endsWith(".md") && file !== "_report.json") {
+      const content = await fs.readFile(path.join(dir, file), "utf-8");
+      const { data } = matter(content);
+      issues.push(data);
+    }
+  }
+  return issues;
 }
 
 interface LinkConfig {
@@ -342,7 +364,6 @@ function buildLinkConfig(
   const planRel = path.relative(absOut, absPlan);
   const specRelBase = path.relative(absOut, absSpecs);
 
-  // Ensure they start with ./ or ../ for clarity
   const withDot = (rel: string) => (rel.startsWith(".") ? rel : `./${rel}`);
 
   return {
