@@ -338,4 +338,47 @@ describe("generateIssues", () => {
       byAssignee: { alice: 1 },
     });
   });
+
+  it("should use planPath from config when CLI flag is missing", async () => {
+    // Mock config with planPath
+    vi.mocked(readConfig).mockResolvedValue({
+      planPath: "config-plan.md",
+      llm: { model: "llama3.2", temperature: 0.15 },
+      assignees: [],
+    });
+
+    const mockIssues = [
+      {
+        title: "Config plan issue",
+        description: "From config",
+        labels: ["test"],
+        priority: "must",
+        references: [],
+        assignees: [],
+      },
+    ];
+
+    vi.mocked(generateText).mockResolvedValue({
+      text: JSON.stringify(mockIssues),
+    } as any);
+
+    // Call generateIssues without planPath (pass undefined)
+    await generateIssues(undefined, specsDir, outputDir, {
+      configPath: "dummy.json",
+    });
+
+    // Verify fs.readFile was called with the config plan path
+    expect(fs.readFile).toHaveBeenCalledWith("config-plan.md", "utf-8");
+    expect(fs.writeFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("should throw error if no planPath provided", async () => {
+    vi.mocked(readConfig).mockResolvedValue({}); // empty config
+
+    await expect(
+      generateIssues(undefined, specsDir, outputDir),
+    ).rejects.toThrow(
+      "Plan path must be provided either via --plan flag or planPath in config file",
+    );
+  });
 });

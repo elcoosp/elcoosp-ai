@@ -2,6 +2,7 @@ import fs from "fs-extra";
 import path from "path";
 
 export interface SeedlingConfig {
+  planPath?: string;
   specsDir?: string;
   issuesDir?: string;
   mappingFile?: string;
@@ -13,7 +14,7 @@ export interface SeedlingConfig {
     model?: string;
     temperature?: number;
   };
-  assignees?: Array<{ username: string; role?: string }>;
+  assignees?: Array<{ username: string; role?: string; expertise?: string[] }>;
 }
 
 export async function readConfig(configPath?: string): Promise<SeedlingConfig> {

@@ -8,7 +8,7 @@
 
 ---
 
-Seedling is a command‑line tool that helps you **generate GitHub issues from your project documentation** and **keep them in sync** as your plans evolve. It uses an LLM to break down an implementation plan (like a detailed `04-v1.md` file) into discrete, actionable issues, and then syncs those issues to GitHub – all while maintaining a local, version‑controllable representation of your issues as markdown files.
+Seedling is a command‑line tool that helps you **generate GitHub issues from your project documentation** and **keep them in sync** as your plans evolve. It uses an LLM to break down an implementation plan into discrete, actionable issues, and then syncs those issues to GitHub – all while maintaining a local, version‑controllable representation of your issues as markdown files.
 
 > [!NOTE]
 > Seedling is designed for teams and individuals who want to treat their issue tracking as code. By keeping issues in markdown alongside your specs, you can review, edit, and version them just like any other source file.
@@ -45,10 +45,10 @@ After global installation, you can use the `seedling` command directly. If you p
 
 ```bash
 # If installed globally
-seedling gen --plan ./04-v1.md --specs ./specs --out ./issues
+seedling gen --plan ./plan.md --specs ./specs --out ./issues
 
 # Without installation
-pnpx @elcoosp-ai/seedling gen --plan ./04-v1.md --specs ./specs --out ./issues
+pnpx @elcoosp-ai/seedling gen --plan ./plan.md --specs ./specs --out ./issues
 ```
 
 - `--plan` – path to your implementation plan (markdown).

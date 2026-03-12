@@ -20,25 +20,34 @@ export interface GenerateIssuesOptions {
 }
 
 export async function generateIssues(
-  planPath: string,
+  planPath: string | undefined,
   specsDir: string,
   outputDir: string,
   options?: GenerateIssuesOptions,
 ): Promise<void> {
   const config = await readConfig(options?.configPath);
+
+  // Determine plan path: CLI argument > config > error
+  const resolvedPlanPath = planPath || config.planPath;
+  if (!resolvedPlanPath) {
+    throw new Error(
+      "Plan path must be provided either via --plan flag or planPath in config file",
+    );
+  }
+
   const model = options?.model || config.llm?.model || "llama3.2";
   const temperature = options?.temperature ?? config.llm?.temperature ?? 0.15;
   const apiKey = options?.apiKey || process.env.OLLAMA_API_KEY;
   const baseURL = options?.baseURL || process.env.OLLAMA_BASE_URL;
 
   const linkConfig = buildLinkConfig(
-    planPath,
+    resolvedPlanPath,
     specsDir,
     options?.repoBaseUrl,
     options?.branch || "main",
   );
 
-  const plan = await fs.readFile(planPath, "utf-8");
+  const plan = await fs.readFile(resolvedPlanPath, "utf-8");
 
   const specFiles = await fs.readdir(specsDir);
   const specsByName: Record<string, string> = {};
