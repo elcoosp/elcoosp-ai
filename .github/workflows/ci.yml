@@ -13,6 +13,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Force Node 24 for actions
     defaults:
       run:
         working-directory: ./seedling
@@ -23,7 +25,7 @@ jobs:
       # Install pnpm first (so it's available for caching and later steps)
       - uses: pnpm/action-setup@v4
         with:
-          version: 10 # You can change to '9' or 'latest' if preferred
+          version: 10
 
       - uses: actions/setup-node@v6
         with:

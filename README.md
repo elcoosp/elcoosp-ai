@@ -16,7 +16,7 @@ Each package is located in its own subdirectory and can be used independently.
 
 ### Prerequisites
 
-- Node.js 18 or later
+- Node.js 24 or later
 - pnpm (recommended) or npm/yarn
 
 ### Installation
