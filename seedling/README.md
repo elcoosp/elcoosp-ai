@@ -10,8 +10,7 @@
 
 Seedling is a command‑line tool that helps you **generate GitHub issues from your project documentation** and **keep them in sync** as your plans evolve. It uses an LLM to break down an implementation plan into discrete, actionable issues, and then syncs those issues to GitHub – all while maintaining a local, version‑controllable representation of your issues as markdown files.
 
-> [!NOTE]
-> Seedling is designed for teams and individuals who want to treat their issue tracking as code. By keeping issues in markdown alongside your specs, you can review, edit, and version them just like any other source file.
+Seedling is designed for teams and individuals who want to treat their issue tracking as code. By keeping issues in markdown alongside your specs, you can review, edit, and version them just like any other source file.
 
 ## ✨ Features
 
@@ -73,19 +72,22 @@ seedling gen --plan ./docs/plan.md --specs ./docs/specs --out ./generated-issues
 seedling gen
 ```
 
-> [!IMPORTANT]
-> If you are using a cloud‑based model (e.g., `glm-5:cloud`), you **must** set the `OLLAMA_API_KEY` environment variable to your API key. For local models (like `llama3.2`), no API key is required. You can set it in your terminal:
->
-> ```bash
-> export OLLAMA_API_KEY=your-api-key-here
-> ```
->
-> Or create a `.env` file in your project root with `OLLAMA_API_KEY=your-key`.
+If you are using a cloud‑based model (e.g., `glm-5:cloud`), you must set the `OLLAMA_API_KEY` environment variable to your API key. For local models (like `llama3.2`), no API key is required. You can set it in your terminal:
+
+```bash
+export OLLAMA_API_KEY=your-api-key-here
+```
+
+Or create a `.env` file in your project root with `OLLAMA_API_KEY=your-key`.
 
 ### Sync issues to GitHub
 
 ```bash
+# Set your GitHub token (recommended)
 export GITHUB_TOKEN=ghp_abc123
+
+# Or create a .env file in your project root:
+# GITHUB_TOKEN=ghp_abc123
 
 # If installed globally
 seedling sync --repo owner/repo [options]
@@ -97,6 +99,7 @@ pnpx @elcoosp-ai/seedling sync --repo owner/repo [options]
 **Options:**
 
 - `--repo` – repository in the format `owner/repo` **(required)**.
+- `-t, --token <token>` – GitHub token (optional if `GITHUB_TOKEN` environment variable is set).
 - `--dir <dir>` – directory containing issue markdown files (default `./issues`).
 - `--mapping <file>` – path to the mapping file (default `./issues-mapping.json`).
 - `--dry-run` – preview changes without actually calling the GitHub API.
@@ -106,6 +109,8 @@ pnpx @elcoosp-ai/seedling sync --repo owner/repo [options]
 ```bash
 seedling sync --repo elcoosp/skilldeck --dir ./docs/issues
 ```
+
+You can store your GitHub token in a `.env` file to avoid typing it each time. The token is read from the environment, so it never appears in your command history.
 
 ## ⚙️ Configuration
 
@@ -148,8 +153,7 @@ Seedling can be configured via a `seedling.config.json` file in your project roo
 - `llm` – default model and temperature.
 - `assignees` – team roster for intelligent assignment; the LLM will match issues to members based on their role and expertise.
 
-> [!TIP]
-> Command‑line flags always take precedence over the config file – use them for one‑off overrides.
+Command‑line flags always take precedence over the config file – use them for one‑off overrides.
 
 ## 📄 Issue File Format
 
