@@ -19,6 +19,11 @@ jobs:
         with:
           fetch-depth: 0 # Fetches all history for accurate changelog generation
 
+      # Install pnpm first (so it's available for caching and later steps)
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8 # Use the pnpm version you need (or 'latest')
+
       - uses: actions/setup-node@v6
         with:
           node-version: 20
@@ -26,7 +31,6 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: ./seedling/pnpm-lock.yaml
 
-      - run: npm install -g pnpm
       - run: pnpm install
       - run: pnpm run prepublishOnly # Builds, checks, and tests
 

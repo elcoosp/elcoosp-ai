@@ -20,18 +20,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Install pnpm first (so it's available for caching and later steps)
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8 # You can change to '9' or 'latest' if preferred
+
       - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: "pnpm"
           cache-dependency-path: "./seedling/pnpm-lock.yaml"
 
-      - run: npm install -g pnpm
       - run: pnpm install
       - run: pnpm run lint
       - run: pnpm run test:coverage
 
-      # (Optional) If you want to keep coverage reports as artifacts:
+      # (Optional) Upload coverage reports as artifacts
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
