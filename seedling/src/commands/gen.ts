@@ -17,6 +17,13 @@ export interface GenerateIssuesOptions {
   baseURL?: string;
   repoBaseUrl?: string;
   branch?: string;
+  maxSteps?: number; // maximum number of generation rounds (safety)
+}
+
+interface GenerationChunk {
+  issues: any[];
+  isCompleted: boolean;
+  nextSectionHint?: string;
 }
 
 export async function generateIssues(
@@ -45,99 +52,173 @@ export async function generateIssues(
   const temperature = options?.temperature ?? config.llm?.temperature ?? 0.15;
   const apiKey = options?.apiKey || process.env.OLLAMA_API_KEY;
   const baseURL = options?.baseURL || process.env.OLLAMA_BASE_URL;
+  const maxSteps = options?.maxSteps || 20; // prevent infinite loops
 
-  const linkConfig = buildLinkConfig(
-    resolvedPlanPath,
-    resolvedSpecsDir,
-    options?.repoBaseUrl,
-    options?.branch || "main",
-  );
-
+  // Read plan and specs
   const plan = await fs.readFile(resolvedPlanPath, "utf-8");
-
-  // Check if specs directory exists
   if (!(await fs.pathExists(resolvedSpecsDir))) {
     throw new Error(`Specs directory not found: ${resolvedSpecsDir}`);
   }
-
   const specFiles = await fs.readdir(resolvedSpecsDir);
   const specsByName: Record<string, string> = {};
-
   for (const file of specFiles.filter((f) => f.endsWith(".md"))) {
-    const content = await fs.readFile(
+    specsByName[file] = await fs.readFile(
       path.join(resolvedSpecsDir, file),
       "utf-8",
     );
-    specsByName[file] = content;
   }
 
-  if (Object.keys(specsByName).length === 0) {
-    console.warn(`No markdown spec files found in ${resolvedSpecsDir}`);
-  }
-
+  // Build assignees section
   let assigneesSection = "";
   if (config.assignees && config.assignees.length > 0) {
     assigneesSection = `
 ## Available Team Members
-
 | Username | Role | Expertise |
 |----------|------|-----------|
- ${config.assignees
-   .map(
-     (a) =>
-       `| ${a.username} | ${a.role || "Contributor"} | ${a.expertise?.join(", ") || "General"} |`,
-   )
-   .join("\n")}
-
+${config.assignees
+  .map(
+    (a) =>
+      `| ${a.username} | ${a.role || "Contributor"} | ${a.expertise?.join(", ") || "General"} |`,
+  )
+  .join("\n")}
 **Assignment Guidelines:**
 - Match issues to team members based on their expertise
 `;
   }
 
-  const prompt = buildPrompt(plan, specsByName, assigneesSection, linkConfig);
-
-  console.log(
-    `Generating issues with model: ${model} (temperature: ${temperature})`,
+  // Prepare link config with correct relative paths from output directory
+  const linkConfig = buildLinkConfig(
+    resolvedPlanPath,
+    resolvedSpecsDir,
+    resolvedOutputDir,
+    options?.repoBaseUrl,
+    options?.branch || "main",
   );
-  console.log(`Specs loaded: ${Object.keys(specsByName).join(", ")}`);
-  console.log(`Link config:`, linkConfig);
 
+  // ===== ITERATIVE GENERATION =====
   const ollama = createOllama({
     ...(apiKey && { apiKey }),
     ...(baseURL && { baseURL }),
   });
 
-  const { text } = await generateText({
-    model: ollama(model, { keep_alive: "10m" }),
-    prompt,
-    temperature,
-    maxTokens: 32000,
-    abortSignal: AbortSignal.timeout(600000),
-  });
+  // Initial system message
+  const messages = [
+    {
+      role: "system",
+      content: `You are an expert project manager generating GitHub issues from an implementation plan and specifications.
+You will generate issues in **chunks**. Each response MUST be a valid JSON object with the following structure:
+{
+  "issues": [ ... ],   // array of issue objects (each with title, description, labels, priority, references, assignees, effort, dependencies)
+  "isCompleted": false, // set to true ONLY when you have generated ALL possible issues from the plan
+  "nextSectionHint": "optional description of what you will tackle next"
+}
 
-  let issues: any[];
-  try {
-    let jsonText = text.trim();
-    if (jsonText.startsWith("```")) {
-      jsonText = jsonText
-        .replace(/^```(?:json)?\n?/, "")
-        .replace(/\n?```$/, "");
+Issue object format:
+{
+  "title": "imperative title",
+  "description": "detailed markdown",
+  "labels": ["domain", "priority", "type", "size"],
+  "priority": "must|should|could",
+  "references": ["path#anchor"],
+  "assignees": ["username"],
+  "effort": "1d",
+  "dependencies": ["issue-id"]
+}
+
+Do not include any text outside the JSON. If you need more steps, set "isCompleted": false and provide a hint.
+If you have generated all issues, set "isCompleted": true.
+
+Here are the input documents.
+`,
+    },
+    {
+      role: "user",
+      content: buildInitialPrompt(
+        plan,
+        specsByName,
+        assigneesSection,
+        linkConfig,
+      ),
+    },
+  ];
+
+  let allIssues: any[] = [];
+  let stepCount = 0;
+  let completed = false;
+
+  console.log(
+    `Starting iterative generation with model ${model}, max steps ${maxSteps}`,
+  );
+
+  while (!completed && stepCount < maxSteps) {
+    stepCount++;
+    console.log(`Step ${stepCount}...`);
+
+    const result = await generateText({
+      model: ollama(model, { keep_alive: "10m" }),
+      messages,
+      temperature,
+      maxTokens: 8192, // generous for a chunk
+    });
+
+    // Parse the response
+    let chunk: GenerationChunk;
+    try {
+      let text = result.text.trim();
+      // Strip possible markdown code fences
+      if (text.startsWith("```")) {
+        text = text.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+      }
+      chunk = JSON.parse(text);
+    } catch (err) {
+      console.error(
+        `Failed to parse step ${stepCount} response as JSON. Raw response:`,
+        result.text.slice(0, 1000),
+      );
+      throw new Error(`Invalid JSON in step ${stepCount}: ${err}`);
     }
-    issues = JSON.parse(jsonText);
-  } catch (err) {
-    console.error("Raw LLM response:", text.slice(0, 2000));
-    throw new Error(`Failed to parse LLM response as JSON: ${err}`);
+
+    // Validate chunk structure
+    if (!chunk.issues || !Array.isArray(chunk.issues)) {
+      throw new Error(`Step ${stepCount} response missing "issues" array`);
+    }
+
+    // Add issues to global list
+    allIssues.push(...chunk.issues);
+    completed = chunk.isCompleted === true;
+
+    // Add assistant's response to conversation history
+    messages.push({ role: "assistant", content: result.text });
+
+    // If not completed, add a follow-up prompt to continue
+    if (!completed) {
+      const hint = chunk.nextSectionHint
+        ? ` Continue with: ${chunk.nextSectionHint}`
+        : "";
+      messages.push({
+        role: "user",
+        content: `Please generate the next chunk of issues.${hint} Remember to set "isCompleted" to true when you have covered everything.`,
+      });
+    }
   }
 
-  console.log(`Generated ${issues.length} issues`);
+  if (!completed) {
+    console.warn(
+      `Reached maximum steps (${maxSteps}) without completion signal. Generated ${allIssues.length} issues.`,
+    );
+  } else {
+    console.log(
+      `Generation completed in ${stepCount} steps. Total issues: ${allIssues.length}`,
+    );
+  }
 
+  // ===== WRITE ISSUES =====
   await fs.ensureDir(resolvedOutputDir);
-
   let writtenCount = 0;
   let skippedCount = 0;
 
-  for (let i = 0; i < issues.length; i++) {
-    const issue = issues[i];
+  for (let i = 0; i < allIssues.length; i++) {
+    const issue = allIssues[i];
 
     if (!issue.title || !issue.description) {
       console.warn(`Skipping issue ${i + 1}: missing title or description`);
@@ -188,22 +269,25 @@ export async function generateIssues(
     console.log(`Skipped ${skippedCount} invalid issues`);
   }
 
+  // Write report
   const report = {
     generatedAt: new Date().toISOString(),
-    totalIssues: issues.length,
+    totalIssues: allIssues.length,
     written: writtenCount,
     skipped: skippedCount,
+    stepsUsed: stepCount,
+    completed,
     linkConfig,
     byPriority: {
-      must: issues.filter((i) => i.priority === "must").length,
-      should: issues.filter((i) => i.priority === "should").length,
-      could: issues.filter((i) => i.priority === "could").length,
+      must: allIssues.filter((i) => i.priority === "must").length,
+      should: allIssues.filter((i) => i.priority === "should").length,
+      could: allIssues.filter((i) => i.priority === "could").length,
     },
     byLabel: {} as Record<string, number>,
     byAssignee: {} as Record<string, number>,
   };
 
-  for (const issue of issues) {
+  for (const issue of allIssues) {
     for (const label of issue.labels || []) {
       report.byLabel[label] = (report.byLabel[label] || 0) + 1;
     }
@@ -220,59 +304,64 @@ export async function generateIssues(
 
 interface LinkConfig {
   useFullUrls: boolean;
-  baseUrl: string;
-  branch: string;
-  planPath: string;
-  specsDir: string;
-  buildUrl: (filePath: string, anchor?: string) => string;
+  planExample: string;
+  specExample: string;
+  archExample: string;
+  testExample: string;
 }
 
 function buildLinkConfig(
   planPath: string,
   specsDir: string,
+  outputDir: string,
   repoBaseUrl?: string,
   branch: string = "main",
 ): LinkConfig {
-  const normalizePath = (p: string) =>
-    p.replace(/^\.\//, "").replace(/\/$/, "");
-  const normalizedPlanPath = normalizePath(planPath);
-  const normalizedSpecsDir = normalizePath(specsDir);
+  const absPlan = path.resolve(planPath);
+  const absSpecs = path.resolve(specsDir);
+  const absOut = path.resolve(outputDir);
   const useFullUrls = Boolean(repoBaseUrl);
 
-  const buildUrl = (filePath: string, anchor?: string): string => {
-    const normalizedFile = normalizePath(filePath);
-    if (repoBaseUrl) {
-      const base = `${repoBaseUrl}/blob/${branch}/${normalizedFile}`;
-      return anchor ? `${base}#${anchor}` : base;
-    }
-    return anchor ? `./${normalizedFile}#${anchor}` : `./${normalizedFile}`;
-  };
+  const normalizePath = (p: string) =>
+    p.replace(/^\.\//, "").replace(/\/$/, "");
+
+  if (useFullUrls) {
+    const base = `${repoBaseUrl}/blob/${branch}`;
+    const planRel = normalizePath(planPath);
+    const specsRel = normalizePath(specsDir);
+    return {
+      useFullUrls: true,
+      planExample: `${base}/${planRel}#chunk-5-skill-system`,
+      specExample: `${base}/${specsRel}/srs.md#req-func-040`,
+      archExample: `${base}/${specsRel}/archi.md#adr-007`,
+      testExample: `${base}/${specsRel}/test-verification.md#sc-func-010`,
+    };
+  }
+
+  // Compute relative paths from output directory
+  const planRel = path.relative(absOut, absPlan);
+  const specRelBase = path.relative(absOut, absSpecs);
+
+  // Ensure they start with ./ or ../ for clarity
+  const withDot = (rel: string) => (rel.startsWith(".") ? rel : `./${rel}`);
 
   return {
-    useFullUrls,
-    baseUrl: repoBaseUrl || "",
-    branch,
-    planPath: normalizedPlanPath,
-    specsDir: normalizedSpecsDir,
-    buildUrl,
+    useFullUrls: false,
+    planExample: `${withDot(planRel)}#chunk-5-skill-system`,
+    specExample: `${withDot(path.join(specRelBase, "srs.md"))}#req-func-040`,
+    archExample: `${withDot(path.join(specRelBase, "archi.md"))}#adr-007`,
+    testExample: `${withDot(path.join(specRelBase, "test-verification.md"))}#sc-func-010`,
   };
 }
 
-function buildPrompt(
+function buildInitialPrompt(
   plan: string,
   specsByName: Record<string, string>,
   assigneesSection: string,
   linkConfig: LinkConfig,
 ): string {
-  const { useFullUrls, planPath, specsDir, buildUrl } = linkConfig;
-
-  const planLinkExample = buildUrl(planPath, "chunk-5-skill-system");
-  const specLinkExample = buildUrl(`${specsDir}/srs.md`, "req-func-040");
-  const archLinkExample = buildUrl(`${specsDir}/archi.md`, "adr-007");
-  const testLinkExample = buildUrl(
-    `${specsDir}/test-verification.md`,
-    "sc-func-010",
-  );
+  const { useFullUrls, planExample, specExample, archExample, testExample } =
+    linkConfig;
 
   return `# Task: Generate GitHub Issues from Implementation Plan
 
@@ -333,13 +422,13 @@ Example: "## Chunk 1: Foundation" → \`#chunk-1-foundation\`
 [Why this issue exists]
 
 **Related Plan Section:**
-- [Name](${planLinkExample}) - description
+- [Name](${planExample}) - description
 
 **Related Requirements:**
-- [REQ-ID](${specLinkExample}) - description
+- [REQ-ID](${specExample}) - description
 
 **Related Architecture:**
-- [Component](${archLinkExample}) - description
+- [Component](${archExample}) - description
 
 ## Problem Statement
 
@@ -363,7 +452,7 @@ Example: "## Chunk 1: Foundation" → \`#chunk-1-foundation\`
 ## Testing Requirements
 
 **BDD scenarios:**
-- [ID](${testLinkExample}) - description
+- [ID](${testExample}) - description
 
 ## Dependencies
 
@@ -384,18 +473,19 @@ Example: "## Chunk 1: Foundation" → \`#chunk-1-foundation\`
    useFullUrls
      ? `
 **Using FULL URLs** (for GitHub issues):
-- Plan: \`${planLinkExample}\`
-- Specs: \`${specLinkExample}\`
-- Tests: \`${testLinkExample}\`
+- Plan: \`${planExample}\`
+- Specs: \`${specExample}\`
+- Tests: \`${testExample}\`
 
 Format: \`https://github.com/user/repo/blob/BRANCH/path/to/file.md#anchor\`
 `
      : `
-**Using RELATIVE paths** (for markdown files):
-- Plan: \`./${planPath}#anchor\`
-- Specs: \`./${specsDir}/filename.md#anchor\`
+**Using RELATIVE paths** (for markdown files in the issues directory):
+- Plan: \`${planExample}\`
+- Specs: \`${specExample}\`
+- Tests: \`${testExample}\`
 
-Format: \`./path/from/repo/root/file.md#anchor\`
+These paths are correct from the location of the generated issue files.
 `
  }
 
@@ -410,35 +500,15 @@ Format: \`./path/from/repo/root/file.md#anchor\`
 
 ---
 
-## Output
+## Output Instructions
 
-Return ONLY a JSON array:
+You will generate issues in **multiple chunks**. Your first response must be a valid JSON object with:
+- \`issues\`: array of issue objects (as described)
+- \`isCompleted\`: false (unless you truly have generated all issues in this one go)
+- \`nextSectionHint\`: optional string indicating what you plan to cover next
 
-\`\`\`json
-[
-  {
-    "title": "imperative title",
-    "description": "markdown with links",
-    "labels": ["domain", "priority", "type", "size"],
-    "priority": "must|should|could",
-    "references": ["path#anchor"],
-    "assignees": ["username"],
-    "effort": "1d",
-    "dependencies": ["issue-id"]
-  }
-]
-\`\`\`
+Do not include any text outside the JSON. If you need more steps, set \`isCompleted\` to false and provide a hint.
+When you have generated **all** issues, set \`isCompleted\` to true and omit the hint.
 
----
-
-## Quality Checklist
-
-- [ ] Title imperative
-- [ ] All sections present
-- [ ] **Links use correct format${useFullUrls ? " (full URLs)" : " (relative paths)"}**
-- [ ] Anchors correctly formatted
-- [ ] Acceptance criteria testable
-- [ ] Dependencies identified
-
-Generate comprehensive issues with proper links.`;
+Now, begin with the first chunk.`;
 }
