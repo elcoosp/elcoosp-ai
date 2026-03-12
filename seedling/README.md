@@ -3,7 +3,7 @@
 **AI-powered GitHub issue generator and syncer** – turn your implementation plans and specs into trackable issues, automatically.
 
 [![npm version](https://img.shields.io/npm/v/@elcoosp-ai/seedling.svg)](https://www.npmjs.com/package/@elcoosp-ai/seedling)
-[![CI](https://github.com/elcoosp-ai/seedling/actions/workflows/ci.yml/badge.svg)](https://github.com/elcoosp-ai/seedling/actions/workflows/ci.yml)
+[![CI](https://github.com/elcoosp/elcoosp-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/elcoosp/elcoosp-ai/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
@@ -23,25 +23,32 @@ Seedling is a command‑line tool that helps you **generate GitHub issues from y
 
 ## 📦 Installation
 
+You can either install the package globally, or run it directly without installation using `npx`/`pnpx`.
+
 ```bash
-# Using npm
+# Install globally with npm
 npm install -g @elcoosp-ai/seedling
 
-# Using pnpm
+# Install globally with pnpm
 pnpm add -g @elcoosp-ai/seedling
 
-# Using npx
+# Run without installation (any of these)
 npx @elcoosp-ai/seedling --help
+pnpx @elcoosp-ai/seedling --help
 ```
 
 ## 🚀 Usage
 
-Seedling provides two main commands: `gen` to generate issue markdown files from your plan, and `sync` to synchronize those files with GitHub.
+After global installation, you can use the `seedling` command directly. If you prefer not to install, replace `seedling` in the examples below with `npx @elcoosp-ai/seedling` or `pnpx @elcoosp-ai/seedling`.
 
 ### Generate issues from a plan
 
 ```bash
+# If installed globally
 seedling gen --plan ./04-v1.md --specs ./specs --out ./issues
+
+# Without installation
+pnpx @elcoosp-ai/seedling gen --plan ./04-v1.md --specs ./specs --out ./issues
 ```
 
 - `--plan` – path to your implementation plan (markdown).
@@ -53,7 +60,12 @@ seedling gen --plan ./04-v1.md --specs ./specs --out ./issues
 
 ```bash
 export GITHUB_TOKEN=ghp_abc123
+
+# If installed globally
 seedling sync --repo owner/repo --dir ./issues
+
+# Without installation
+pnpx @elcoosp-ai/seedling sync --repo owner/repo --dir ./issues
 ```
 
 - `--token` – GitHub personal access token (or set `GITHUB_TOKEN` env).
@@ -116,8 +128,11 @@ Implement the agent loop as described in the architecture document...
 ## 🧪 Development
 
 ```bash
-# Clone the repository
-git clone https://github.com/elcoosp-ai/seedling.git
+# Clone the monorepo
+git clone https://github.com/elcoosp/elcoosp-ai.git
+cd elcoosp-ai
+
+# Navigate to the seedling package
 cd seedling
 
 # Install dependencies
