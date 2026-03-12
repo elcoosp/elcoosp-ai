@@ -21,8 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
-          # Need full history for changelog generation
+          fetch-depth: 0 # required for git-cliff to see all commits
 
       - uses: pnpm/action-setup@v4
         with:
@@ -37,57 +36,36 @@ jobs:
       - run: pnpm install
       - run: pnpm run prepublishOnly
 
-      # Get the tag being built
-      - name: Get tag name
-        id: tag
-        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      # Get the previous tag for comparison
-      - name: Get previous tag
-        id: prev_tag
-        run: |
-          PREV_TAG=$(git tag --sort=-v:refname | grep -v "${{ steps.tag.outputs.tag }}" | head -n 1)
-          echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
-
+      # Generate changelog with git-cliff
       - name: Generate Changelog
-        id: changelog
-        uses: mikepenz/release-changelog-builder-action@v6
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
         with:
-          configuration: ".github/changelog-config.json"
-          commitMode: "true" # Explicitly enable commit mode
-          fromTag: ${{ steps.prev_tag.outputs.prev_tag }}
-          toTag: ${{ steps.tag.outputs.tag }}
-          failOnError: false # Don't fail if changelog is empty
+          # Optional: path to a custom config file (defaults to cliff.toml in repo root)
+          # config: cliff.toml
+          args: --latest --strip header
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OUTPUT: CHANGELOG.md
 
-      # Debug the output
-      - name: Debug Changelog
+      # Read the generated changelog into an output variable
+      - name: Read Changelog
+        id: read_changelog
         run: |
-          echo "Changelog output:"
-          echo "${{ steps.changelog.outputs.changelog }}"
-          echo "Length: $(echo "${{ steps.changelog.outputs.changelog }}" | wc -c) characters"
-
-      # Write changelog to file
-      - name: Write Changelog to File
-        run: |
-          if [ -z "${{ steps.changelog.outputs.changelog }}" ]; then
-            echo "# ${{ steps.tag.outputs.tag }}" > CHANGELOG.md
-            echo "" >> CHANGELOG.md
-            git log --pretty=format:"* %s (%h)" $(git describe --tags --abbrev=0 ${{ steps.prev_tag.outputs.prev_tag }} 2>/dev/null || echo "")..HEAD >> CHANGELOG.md || true
+          if [ -f CHANGELOG.md ]; then
+            content=$(cat CHANGELOG.md)
+            # Use a heredoc to safely pass multiline content
+            echo "notes<<EOF" >> $GITHUB_OUTPUT
+            echo "$content" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
           else
-            echo "${{ steps.changelog.outputs.changelog }}" > CHANGELOG.md
+            echo "notes=No notable changes" >> $GITHUB_OUTPUT
           fi
-          echo "CHANGELOG.md contents:"
-          cat CHANGELOG.md
 
-      # Create GitHub Release with body from file
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: seedling ${{ steps.tag.outputs.tag }}
-          body_path: seedling/CHANGELOG.md
-          fail_on_unmatched_files: false
+          name: seedling ${{ github.ref_name }}
+          body: ${{ steps.read_changelog.outputs.notes }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
