@@ -45,14 +45,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Write changelog to a file inside seedling/ (because of working-directory)
       - name: Write Changelog to File
         run: echo "${{ steps.changelog.outputs.changelog }}" > CHANGELOG.md
 
+      # Create GitHub Release – note body_path points to seedling/CHANGELOG.md
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: seedling ${{ github.ref_name }}
-          body_path: CHANGELOG.md
+          body_path: seedling/CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
