@@ -18,13 +18,56 @@ export interface GenerateIssuesOptions {
   repoBaseUrl?: string;
   branch?: string;
   maxSteps?: number;
-  maxRetries?: number; // new: number of retries per step
+  maxRetries?: number;
 }
 
 interface GenerationChunk {
   issues: any[];
   isCompleted: boolean;
   nextSectionHint?: string;
+}
+
+// Determine if an error is retryable or permanent
+function isRetryableError(error: any): boolean {
+  const message = error?.message || String(error);
+  const lower = message.toLowerCase();
+
+  // Permanent errors – do not retry
+  const permanentKeywords = [
+    "session usage limit",
+    "quota exceeded",
+    "upgrade",
+    "payment required",
+    "forbidden",
+    "unauthorized",
+    "invalid api key",
+    "rate limit", // rate limit is transient but we want to respect it; maybe retry after backoff but for simplicity treat as permanent for now
+  ];
+  if (permanentKeywords.some((keyword) => lower.includes(keyword))) {
+    return false;
+  }
+
+  // Transient errors – retry
+  const transientKeywords = [
+    "network error",
+    "timeout",
+    "econnrefused",
+    "econnreset",
+    "etimedout",
+    "5xx",
+    "internal server error",
+    "bad gateway",
+    "service unavailable",
+    "gateway timeout",
+    "aborted",
+    "parse error", // LLM output malformed – may be temporary glitch
+  ];
+  if (transientKeywords.some((keyword) => lower.includes(keyword))) {
+    return true;
+  }
+
+  // By default, assume transient (safe)
+  return true;
 }
 
 export async function generateIssues(
@@ -35,7 +78,6 @@ export async function generateIssues(
 ): Promise<void> {
   const config = await readConfig(options?.configPath);
 
-  // Determine paths
   const resolvedPlanPath = planPath || config.planPath;
   if (!resolvedPlanPath) {
     throw new Error(
@@ -49,9 +91,8 @@ export async function generateIssues(
   const apiKey = options?.apiKey || process.env.OLLAMA_API_KEY;
   const baseURL = options?.baseURL || process.env.OLLAMA_BASE_URL;
   const maxSteps = options?.maxSteps || 20;
-  const maxRetries = options?.maxRetries || 3; // default 3 retries per step
+  const maxRetries = options?.maxRetries || 3;
 
-  // Read plan and specs
   const plan = await fs.readFile(resolvedPlanPath, "utf-8");
   if (!(await fs.pathExists(resolvedSpecsDir))) {
     throw new Error(`Specs directory not found: ${resolvedSpecsDir}`);
@@ -65,7 +106,6 @@ export async function generateIssues(
     );
   }
 
-  // Build assignees section
   let assigneesSection = "";
   if (config.assignees && config.assignees.length > 0) {
     assigneesSection = `
@@ -83,7 +123,6 @@ ${config.assignees
 `;
   }
 
-  // Prepare link config
   const linkConfig = buildLinkConfig(
     resolvedPlanPath,
     resolvedSpecsDir,
@@ -92,7 +131,6 @@ ${config.assignees
     options?.branch || "main",
   );
 
-  // Initialize conversation
   const ollama = createOllama({
     ...(apiKey && { apiKey }),
     ...(baseURL && { baseURL }),
@@ -155,8 +193,10 @@ Here are the input documents.
 
     let chunk: GenerationChunk | null = null;
     let attempt = 0;
+    let lastError: Error | null = null;
 
     while (attempt < maxRetries && !chunk) {
+      attempt++;
       try {
         const result = await generateText({
           model: ollama(model, { keep_alive: "10m" }),
@@ -171,27 +211,37 @@ Here are the input documents.
         }
         chunk = JSON.parse(text);
 
-        // Basic validation
         if (!chunk.issues || !Array.isArray(chunk.issues)) {
           throw new Error('Missing "issues" array');
         }
       } catch (err) {
-        attempt++;
+        lastError = err instanceof Error ? err : new Error(String(err));
         console.warn(
-          `Step ${stepCount} attempt ${attempt} failed: ${err.message}`,
+          `Step ${stepCount} attempt ${attempt} failed: ${lastError.message}`,
         );
-        if (attempt >= maxRetries) {
-          throw new Error(
-            `Step ${stepCount} failed after ${maxRetries} attempts.`,
-          );
+
+        // If error is permanent, break out of retry loop immediately
+        if (!isRetryableError(lastError)) {
+          console.error(`Permanent error, aborting step ${stepCount}`);
+          throw lastError;
         }
-        // Wait before retrying
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+
+        if (attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000; // exponential backoff
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
       }
     }
 
-    // Now we have a valid chunk
-    // Write each issue from this chunk to disk immediately
+    if (!chunk) {
+      throw (
+        lastError ||
+        new Error(`Step ${stepCount} failed after ${maxRetries} attempts`)
+      );
+    }
+
+    // Write issues from this chunk
     for (const issue of chunk.issues) {
       if (!issue.title || !issue.description) {
         console.warn(
@@ -206,7 +256,6 @@ Here are the input documents.
         strict: true,
         replacement: "-",
       }).slice(0, 50);
-      // Ensure uniqueness by appending a counter if file exists
       let finalId = id;
       let counter = 1;
       while (
@@ -277,7 +326,6 @@ Here are the input documents.
     );
   }
 
-  // Write final report
   const allIssues = await readAllIssues(resolvedOutputDir);
   const report = {
     generatedAt: new Date().toISOString(),
@@ -360,7 +408,6 @@ function buildLinkConfig(
     };
   }
 
-  // Compute relative paths from output directory
   const planRel = path.relative(absOut, absPlan);
   const specRelBase = path.relative(absOut, absSpecs);
 
